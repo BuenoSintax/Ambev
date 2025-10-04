@@ -1,3 +1,5 @@
+![Diagrama Ambev](../assets/Ambev.drawio.png)
+
 # Arquitetura Market Pulse — Real-time with Kafka: Detalhamento Técnico
 
 ## 1) Objetivo e Princípios de Design
