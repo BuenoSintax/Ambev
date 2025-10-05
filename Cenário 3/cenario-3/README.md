@@ -33,7 +33,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 ## Arquitetura
 
-![Arquitetura – leitura no Cenário 3](../assets/Ambev2.png)
+![Arquitetura – leitura no Cenário 3](../../assets/Ambev2.png)
 
 **Overview**
 
@@ -64,7 +64,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 
 
-![Endpoints](../assets/endpoints.png)
+![Endpoints](../../assets/endpoints.png)
 
 ---
 
@@ -75,7 +75,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 ### 1) Listar artigos mais recentes
 
-![Latest_articles](../assets/latest_articles.png)
+![Latest_articles](../../assets/latest_articles.png)
 
 **GET** `/api/v1/articles/latest`
 
@@ -140,7 +140,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 * `id` aceita o `_id` do Mongo (string hexadecimal) **ou** `articleId/contentHash` se o serviço estiver implementado para ambos.
 
-![Article by id](../assets/article_byID.png)
+![Article by id](../../assets/article_byID.png)
 
 **Resposta 200 (ex.)**
 
@@ -318,11 +318,11 @@ open http://localhost:3000/docs
 **Swagger – exemplos reais**
 
 * Listar fontes (`GET /api/v1/sources`)
-  ![Swagger – sources](../assets/endpoints.png)
+![Swagger – sources](../../assets/endpoints.png)
 
 * Upsert de fontes admin (`POST /api/admin/sources/upsert-many`)
-  ![Swagger – admin upsert](../assets/upsert_many.png)
-  ![Swagger – admin sources](../assets/sources.png)
+  ![Swagger – admin upsert](../../assets/upsert_many.png)
+  ![Swagger – admin sources](../../assets/sources.png)
 
 
 ---
