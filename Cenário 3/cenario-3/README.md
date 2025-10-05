@@ -8,6 +8,8 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 **Visão simples:**
 Esta API é a “porta de entrada” para analistas e aplicações internas verem as notícias que já foram coletadas e normalizadas pelo pipeline do Cenário 2. Ela lista os artigos mais recentes, permite buscar por palavra-chave e obter o detalhe de um artigo específico — com rapidez, segurança e alta disponibilidade. O código desenvolvido foi feito para extremamente simplificar um fluxo futuro, separando o ambiente transacional do analítico.
 
+Por simplificar, quis ir além e consumir os dados e realizar pequenas transformacoes de possivel fluxo streaming. Aqui consta a arquitetura, o desenvolvimento breve bem como os possíveis resultados de uma estrtura.
+
 ---
 
 ## Sumário
