@@ -176,7 +176,7 @@ Um **esboço de solução de IA** (pós-pipeline de dados) para gerar o **Boleti
 
 ## Evidências da Solução
 
-> Substitua pelos seus artefatos (links internos/externos):
+
 
 * **Cenário 2**
 
@@ -194,8 +194,7 @@ Um **esboço de solução de IA** (pós-pipeline de dados) para gerar o **Boleti
   * Esboços de prompts por agente
 
 ---
-
-## Como Avaliar a Proposta
+Proposta
 
 1. **Clareza do desenho**: fluxos e decisões justificadas (por que Kafka, por que Bronze/Silver/Gold, por que índices X/Y).
 2. **Resiliência/Escala**: retries, rate-limit, idempotência, DLQ; réplicas, cache, leitura em secundários.
