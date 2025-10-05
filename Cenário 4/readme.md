@@ -65,7 +65,7 @@ O desenho separa o problema em **agentes especializados** (leitor, limpador, clu
 * **Publisher**
   Persiste em `bulletins` (Mongo ou Delta), dispara **Slack/e-mail**, opcionalmente atualiza um **dashboard**.
 
-### 2.2 Orquestração (LangGraph-like)
+### 2.2 Orquestração (LangGraph)
 
 A orquestração segue o padrão **StateGraph** (como seu SQLAgent), com **checkpoints**, **paralelismo** e **retries**:
 
