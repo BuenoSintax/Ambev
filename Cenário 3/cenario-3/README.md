@@ -33,7 +33,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 ## Arquitetura
 
-![Arquitetura – leitura no Cenário 3](../../assets/Ambev2.png)
+![Arquitetura](../../assets/Ambev2.jpg)
 
 **Overview**
 
