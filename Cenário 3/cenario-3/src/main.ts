@@ -8,7 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   console.log('MONGODB_URI=', process.env.MONGODB_URI);
   app.enableCors();
-  // app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  //app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
   const config = new DocumentBuilder()
     .setTitle('Market Pulse API')
@@ -20,4 +20,4 @@ async function bootstrap() {
 
   await app.listen(Number(process.env.PORT) || 3000, '0.0.0.0');
 }
-bootstrap();
+void bootstrap();

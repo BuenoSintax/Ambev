@@ -14,7 +14,9 @@
     "test": "jest",
     "seed:one": "npm run seed -- --source=saurav_tech_everything_cnn",
     "seed:dry": "npm run seed -- --dry",
-    "seed:2": "npm run seed -- --concurrency=2"
+    "seed:2": "npm run seed -- --concurrency=2",
+    "sources:bootstrap": "ts-node -r tsconfig-paths/register src/database/admin/bootstrap-sources.ts",
+    "db:indexes": "ts-node -r tsconfig-paths/register src/database/admin/create-indexes.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
