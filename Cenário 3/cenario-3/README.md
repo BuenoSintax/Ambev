@@ -1,4 +1,3 @@
-Aqui está o **README completo** do Cenário 3, já **com a seção de orquestração do seed** incorporada (sem trechos de código nessa seção, como você pediu). É só colar no arquivo `Cenário 3/cenario-3/README.md`.
 
 ---
 
@@ -34,7 +33,7 @@ API NestJS para consulta de artigos de notícias (leitura) com MongoDB, validaç
 
 ## Arquitetura
 
-![Arquitetura – leitura no Cenário 3](../../assets/Ambev2.png)
+![Arquitetura](../../assets/Ambev2.jpg)
 
 **Overview**
 
