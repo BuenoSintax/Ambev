@@ -1,7 +1,7 @@
 # Market Pulse — README do Projeto (Cenários 2, 3 e 4)
 
 > **Propósito**
-> Este repositório documenta uma proposta técnica para a plataforma **Market Pulse**, que monitora e analisa tendências de mercado a partir de notícias on-line. A entrega foca **planejamento, arquitetura e comunicação técnica** — **não** é uma implementação completa de produção.
+> Este repositório documenta uma proposta técnica para a plataforma **Market Pulse**, que monitora e analisa tendências de mercado a partir de notícias on-line. A entrega foca **planejamento, arquitetura e comunicação técnica**. Ele **não** é uma implementação completa de produção.
 > Cada **Cenário** abaixo corresponde aos itens do desafio: ingestão (Cenário 2), API de acesso (Cenário 3) e boletim de IA (Cenário 4).
 
 ---
