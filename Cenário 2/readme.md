@@ -1,4 +1,4 @@
-![Diagrama Ambev](../assets/Ambev.drawio.png)
+![Diagrama Ambev](../assets/Ambev.jpg)
 
 # Arquitetura Market Pulse — Real-time with Kafka: Detalhamento Técnico
 
