@@ -1,0 +1,20 @@
+[
+  {
+    "id": "newsapi-top",
+    "name": "NewsAPI Top Headlines",
+    "api_endpoint": "https://newsapi.org/v2/top-headlines?country=us&apiKey=2b86121a0a8b4d2ea73923653bae5d6c",
+    "description": "Top US headlines from NewsAPI"
+  },
+  {
+    "id": "newsapi-business",
+    "name": "NewsAPI Business",
+    "api_endpoint": "https://newsapi.org/v2/top-headlines?country=us&category=business&apiKey=2b86121a0a8b4d2ea73923653bae5d6c",
+    "description": "Business news from NewsAPI"
+  },
+  {
+    "id": "newsapi-technology",
+    "name": "NewsAPI Technology",
+    "api_endpoint": "https://newsapi.org/v2/top-headlines?country=us&category=technology&apiKey=2b86121a0a8b4d2ea73923653bae5d6c",
+    "description": "Technology news from NewsAPI"
+  }
+]
