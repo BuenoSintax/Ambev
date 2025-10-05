@@ -1,32 +1,25 @@
+import 'dotenv/config';
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import mongoose, { Model } from 'mongoose';
-import { SourceSchema } from '../../sources/schemas/source.schema';
-import { ArticleSchema } from '../../articles/schemas/article.schema';
+import {
+  Source,
+  SourceDocument,
+  SourceSchema,
+} from '../../sources/schemas/source.schema';
+import { Article, ArticleSchema } from '../../articles/schemas/article.schema';
 import { sha256 } from '../../common/utils/hash.util';
-import 'dotenv/config';
 
 const USER_AGENT = 'MarketPulse-Seed/1.0';
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [0, 1000, 3000];
+const DEFAULT_CONCURRENCY = 3;
+const DEFAULT_RATE_LIMIT = 60;
+const DEFAULT_TIMEOUT = 10000;
+const DEFAULT_SEED_MAX = 200;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const startOfDayUtc = (date: Date) => {
-  const utc = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  return utc;
-};
-
-type SeedSource = {
-  id: string;
-  name: string;
-  api_endpoint: string;
-  description?: string;
-  active?: boolean;
-};
 
 type RemoteArticle = {
   title?: string | string[];
@@ -51,7 +44,7 @@ type RemoteArticle = {
 };
 
 type RemotePayload =
-  | { articles?: RemoteArticle[]; sources?: SeedSource[] }
+  | { articles?: RemoteArticle[]; sources?: Record<string, unknown>[] }
   | RemoteArticle[];
 
 type ArticleMetrics = {
@@ -77,15 +70,19 @@ type SeedSummary = {
   totals: ArticleMetrics;
 };
 
-type SeedOptions = {
-  dryRun: boolean;
+type CliOptions = {
+  dryRun?: boolean;
   filterSourceId?: string;
-  concurrency: number;
+  concurrency?: number;
+  bootstrapSources?: boolean;
 };
 
-const defaultOptions: SeedOptions = {
+const defaultOptions: Required<
+  Pick<CliOptions, 'dryRun' | 'concurrency' | 'bootstrapSources'>
+> = {
   dryRun: false,
-  concurrency: 1,
+  concurrency: DEFAULT_CONCURRENCY,
+  bootstrapSources: false,
 };
 
 const toStringValue = (value: unknown): string | null => {
@@ -137,21 +134,9 @@ const normalizeArticle = (article: RemoteArticle) => {
   };
 };
 
-const isSeedSource = (value: unknown): value is SeedSource => {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.name === 'string' &&
-    typeof candidate.api_endpoint === 'string'
-  );
-};
-
 const isRemoteSourcesPayload = (
   value: RemotePayload,
-): value is { sources: SeedSource[] } => {
+): value is { sources: Record<string, unknown>[] } => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as { sources?: unknown };
   return Array.isArray(candidate.sources);
@@ -165,8 +150,8 @@ const safeArrayFrom = (payload: RemotePayload): RemoteArticle[] => {
   return [];
 };
 
-const parseArgs = (argv: string[]): SeedOptions => {
-  const options: SeedOptions = { ...defaultOptions };
+const parseArgs = (argv: string[]): CliOptions => {
+  const options: CliOptions = { ...defaultOptions };
 
   argv.forEach((arg) => {
     if (arg.startsWith('--source=')) {
@@ -180,6 +165,9 @@ const parseArgs = (argv: string[]): SeedOptions => {
       if (!Number.isNaN(value) && value > 0) {
         options.concurrency = value;
       }
+    }
+    if (arg === '--bootstrap-sources') {
+      options.bootstrapSources = true;
     }
   });
 
@@ -199,7 +187,6 @@ const retryRequest = async <T = RemotePayload>(
         ...config,
         headers: {
           'User-Agent': USER_AGENT,
-          Accept: 'application/json',
           ...(config.headers ?? {}),
         },
       });
@@ -217,14 +204,6 @@ const retryRequest = async <T = RemotePayload>(
   }
 
   throw lastError ?? new Error('Unknown axios error');
-};
-
-const logInfo = (message: string, payload: Record<string, unknown> = {}) => {
-  console.log(JSON.stringify({ level: 'info', message, ...payload }));
-};
-
-const logError = (message: string, payload: Record<string, unknown> = {}) => {
-  console.error(JSON.stringify({ level: 'error', message, ...payload }));
 };
 
 const aggregateTotals = (results: SourceResult[]): ArticleMetrics => {
@@ -249,45 +228,6 @@ const aggregateTotals = (results: SourceResult[]): ArticleMetrics => {
   );
 };
 
-const ensureSeedSources = (raw: unknown[]): SeedSource[] => {
-  const validated: SeedSource[] = [];
-  for (const entry of raw) {
-    if (isSeedSource(entry)) {
-      validated.push(entry);
-    } else {
-      logError('Invalid source entry skipped', { entry });
-    }
-  }
-  return validated;
-};
-
-const normalizeRemoteSource = (
-  entry: Partial<SeedSource> & Record<string, unknown>,
-): SeedSource | null => {
-  const idCandidate =
-    toStringValue(entry.id) ??
-    toStringValue(entry.name) ??
-    toStringValue(entry.slug);
-  const apiCandidate =
-    toStringValue(entry.api_endpoint) ??
-    toStringValue(entry.url) ??
-    toStringValue(entry.apiKey) ??
-    toStringValue(entry.endpoint);
-  const nameCandidate = toStringValue(entry.name) ?? toStringValue(entry.title);
-
-  if (!idCandidate || !nameCandidate || !apiCandidate) {
-    return null;
-  }
-
-  return {
-    id: idCandidate,
-    name: nameCandidate,
-    api_endpoint: apiCandidate,
-    description: toStringValue(entry.description) ?? undefined,
-    active: typeof entry.active === 'boolean' ? entry.active : true,
-  };
-};
-
 const runWithConcurrency = async <T>(
   items: T[],
   limit: number,
@@ -310,9 +250,132 @@ const runWithConcurrency = async <T>(
   await Promise.all(runners);
 };
 
+const normalizeJsonSource = (entry: Record<string, unknown>): Source | null => {
+  const id = toStringValue(entry.id) ?? undefined;
+  const name = toStringValue(entry.name) ?? undefined;
+  const apiEndpoint =
+    toStringValue(entry.apiEndpoint) ??
+    toStringValue(entry.api_endpoint) ??
+    undefined;
+
+  if (!id || !name || !apiEndpoint) {
+    return null;
+  }
+
+  const rateLimitPerMin =
+    typeof entry.rateLimitPerMin === 'number'
+      ? entry.rateLimitPerMin
+      : typeof entry.rate_limit_per_min === 'number'
+        ? entry.rate_limit_per_min
+        : DEFAULT_RATE_LIMIT;
+
+  const timeoutMs =
+    typeof entry.timeoutMs === 'number'
+      ? entry.timeoutMs
+      : typeof entry.timeout_ms === 'number'
+        ? entry.timeout_ms
+        : DEFAULT_TIMEOUT;
+
+  const tags = Array.isArray(entry.tags)
+    ? entry.tags.filter((tag): tag is string => typeof tag === 'string')
+    : [];
+
+  const headers =
+    entry.headers &&
+    typeof entry.headers === 'object' &&
+    !Array.isArray(entry.headers)
+      ? (entry.headers as Record<string, string>)
+      : undefined;
+
+  const lastFetchedAt =
+    typeof entry.lastFetchedAt === 'string' ||
+    entry.lastFetchedAt instanceof Date
+      ? new Date(entry.lastFetchedAt as string | number)
+      : undefined;
+
+  const active =
+    typeof entry.active === 'boolean'
+      ? entry.active
+      : typeof entry.active === 'string'
+        ? entry.active !== 'false'
+        : true;
+
+  return {
+    id,
+    name,
+    apiEndpoint,
+    description: toStringValue(entry.description) ?? undefined,
+    active,
+    rateLimitPerMin,
+    tags,
+    lastFetchedAt,
+    timeoutMs,
+    headers,
+  };
+};
+
+const loadSourcesFromJson = async (): Promise<Source[]> => {
+  const filePath = path.join(process.cwd(), 'sources.json');
+  try {
+    await fs.promises.access(filePath);
+  } catch {
+    return [];
+  }
+
+  const raw = await fs.promises.readFile(filePath, 'utf8');
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error('sources.json must contain an array of sources');
+  }
+
+  return parsed
+    .map((entry) => normalizeJsonSource(entry as Record<string, unknown>))
+    .filter((entry): entry is Source => Boolean(entry));
+};
+
+const loadSourcesFromDb = async (
+  SourceModel: Model<SourceDocument>,
+): Promise<Source[]> => {
+  return SourceModel.find({ active: true }).sort({ name: 1 }).lean<Source[]>();
+};
+
+const bulkUpsertSources = async (
+  SourceModel: Model<SourceDocument>,
+  docs: Partial<Source>[],
+) => {
+  const operations = docs
+    .filter((doc) => doc.id)
+    .map((doc) => ({
+      updateOne: {
+        filter: { id: doc.id },
+        update: {
+          $set: {
+            ...doc,
+            active: doc.active ?? true,
+            rateLimitPerMin: doc.rateLimitPerMin ?? DEFAULT_RATE_LIMIT,
+            timeoutMs: doc.timeoutMs ?? DEFAULT_TIMEOUT,
+            tags: doc.tags ?? [],
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+  if (!operations.length) {
+    return { matched: 0, upserted: 0, modified: 0 };
+  }
+
+  const result = await SourceModel.bulkWrite(operations, { ordered: false });
+  return {
+    matched: result.matchedCount,
+    upserted: result.upsertedCount,
+    modified: result.modifiedCount,
+  };
+};
+
 const processArticle = async (
   ArticleModel: Model<any>,
-  source: SeedSource,
+  source: Source,
   rawArticle: RemoteArticle,
   dryRun: boolean,
 ): Promise<'inserted' | 'updated' | 'skipped' | 'simulated'> => {
@@ -344,7 +407,7 @@ const processArticle = async (
       country: normalized.country,
       contentHash: hash,
       raw: rawArticle,
-      _ingestDate: startOfDayUtc(new Date()),
+      _ingestDate: new Date(new Date().toISOString().substring(0, 10)),
     },
     { upsert: true },
   );
@@ -365,242 +428,235 @@ const processArticle = async (
   return 'skipped';
 };
 
-const upsertSource = async (
-  SourceModel: Model<any>,
-  source: SeedSource,
-  dryRun: boolean,
-): Promise<'inserted' | 'updated' | 'skipped' | 'simulated'> => {
-  if (dryRun) {
-    return 'simulated';
-  }
-
-  const result = await SourceModel.updateOne(
-    { id: source.id },
-    { ...source, active: source.active ?? true },
-    { upsert: true },
-  );
-
-  const { upsertedCount = 0, modifiedCount = 0 } = result as {
-    upsertedCount?: number;
-    modifiedCount?: number;
-  };
-
-  if (upsertedCount > 0) {
-    return 'inserted';
-  }
-
-  if (modifiedCount > 0) {
-    return 'updated';
-  }
-
-  return 'skipped';
-};
-
 export const runSeed = async (
-  options: SeedOptions = defaultOptions,
+  options: CliOptions = defaultOptions,
 ): Promise<SeedSummary> => {
   const args = { ...defaultOptions, ...options };
-  const sourcesFile = path.join(process.cwd(), 'sources.json');
-  const sourcesRaw = fs.readFileSync(sourcesFile, 'utf8');
-  const parsed = JSON.parse(sourcesRaw) as unknown;
-
-  if (!Array.isArray(parsed)) {
-    throw new Error('sources.json must contain an array of sources');
-  }
-
-  const configuredSources = ensureSeedSources(parsed);
-  const filteredSources = args.filterSourceId
-    ? configuredSources.filter((s) => s.id === args.filterSourceId)
-    : configuredSources;
-
-  if (filteredSources.length === 0) {
-    throw new Error('No sources found for seeding');
-  }
-
   const MONGODB_URI = process.env.MONGODB_URI ?? '';
-  if (!MONGODB_URI && !args.dryRun) {
+  if (!MONGODB_URI) {
     throw new Error('MONGODB_URI must be set');
   }
 
-  const seedMaxRaw = Number(process.env.SEED_MAX_PER_SOURCE || 200);
-  const SEED_MAX =
-    Number.isFinite(seedMaxRaw) && seedMaxRaw > 0 ? seedMaxRaw : 200;
-  const timeoutRaw = Number(process.env.REQUEST_TIMEOUT_MS || 10000);
+  await mongoose.connect(MONGODB_URI);
+
+  const SourceModel = mongoose.model(
+    Source.name,
+    SourceSchema,
+  ) as Model<SourceDocument>;
+  const ArticleModel = mongoose.model(Article.name, ArticleSchema);
+
+  let sources = await loadSourcesFromDb(SourceModel);
+  let bootstrapInfo:
+    | { matched: number; upserted: number; modified: number }
+    | undefined;
+
+  if (!sources.length) {
+    const fromJson = await loadSourcesFromJson();
+    sources = fromJson;
+
+    if (args.bootstrapSources && fromJson.length) {
+      bootstrapInfo = await bulkUpsertSources(SourceModel, fromJson);
+      if (args.dryRun) {
+        return {
+          results: [],
+          totals: {
+            inserted: 0,
+            updated: 0,
+            skipped: 0,
+            simulated: 0,
+            failed: 0,
+            fetched: 0,
+          },
+        };
+      }
+      sources = await loadSourcesFromDb(SourceModel);
+    }
+  }
+
+  if (args.filterSourceId) {
+    sources = sources.filter((source) => source.id === args.filterSourceId);
+  }
+
+  if (!sources.length) {
+    throw new Error('No sources available for seeding');
+  }
+
+  const timeoutRaw = Number(process.env.REQUEST_TIMEOUT_MS || DEFAULT_TIMEOUT);
   const REQUEST_TIMEOUT =
-    Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : 10000;
+    Number.isFinite(timeoutRaw) && timeoutRaw > 0
+      ? timeoutRaw
+      : DEFAULT_TIMEOUT;
+  const seedMaxRaw = Number(
+    process.env.SEED_MAX_PER_SOURCE || DEFAULT_SEED_MAX,
+  );
+  const SEED_MAX =
+    Number.isFinite(seedMaxRaw) && seedMaxRaw > 0
+      ? seedMaxRaw
+      : DEFAULT_SEED_MAX;
 
   const results: SourceResult[] = [];
 
-  const connectIfNeeded = async () => {
-    if (args.dryRun) {
-      return;
-    }
-    if (
-      mongoose.connection.readyState === mongoose.ConnectionStates.disconnected
-    ) {
-      await mongoose.connect(MONGODB_URI);
-    }
-  };
+  await runWithConcurrency(
+    sources,
+    args.concurrency ?? DEFAULT_CONCURRENCY,
+    async (source) => {
+      const metrics: ArticleMetrics = {
+        inserted: 0,
+        updated: 0,
+        skipped: 0,
+        simulated: 0,
+        failed: 0,
+        fetched: 0,
+      };
+      const startedAt = Date.now();
 
-  await connectIfNeeded();
+      const waitBetweenRequestsMs = Math.max(
+        0,
+        Math.ceil(
+          60000 / Math.max(1, source.rateLimitPerMin ?? DEFAULT_RATE_LIMIT),
+        ),
+      );
+      if (waitBetweenRequestsMs > 0) {
+        await sleep(waitBetweenRequestsMs);
+      }
 
-  const SourceModel = mongoose.model('Source', SourceSchema);
-  const ArticleModel = mongoose.model('Article', ArticleSchema);
+      try {
+        const timeout = source.timeoutMs ?? REQUEST_TIMEOUT;
+        const response = await retryRequest<RemotePayload>(source.apiEndpoint, {
+          timeout,
+          headers: source.headers,
+        });
+        const payload = response.data;
+        const httpStatus = response.status;
 
-  try {
-    await runWithConcurrency(
-      filteredSources,
-      args.concurrency,
-      async (source) => {
-        const startedAt = Date.now();
-        const metrics: ArticleMetrics = {
-          inserted: 0,
-          updated: 0,
-          skipped: 0,
-          simulated: 0,
-          failed: 0,
-          fetched: 0,
-        };
-        try {
-          const sourceResult = await upsertSource(
-            SourceModel,
-            source,
-            args.dryRun,
-          );
-          metrics[sourceResult] += 1;
-        } catch (error) {
-          metrics.failed += 1;
-          logError('Failed to upsert source metadata', {
-            sourceId: source.id,
-            error: (error as Error).message,
-          });
-        }
+        if (isRemoteSourcesPayload(payload)) {
+          const remoteSources = payload.sources
+            .map((entry) => normalizeJsonSource(entry))
+            .filter((entry): entry is Source => Boolean(entry));
 
-        try {
-          const response = await retryRequest<RemotePayload>(
-            source.api_endpoint,
-            {
-              timeout: REQUEST_TIMEOUT,
-            },
-          );
-          const payload = response.data;
-          const httpStatus = response.status;
+          metrics.fetched = remoteSources.length;
 
-          if (isRemoteSourcesPayload(payload)) {
-            const remoteSources = payload.sources
-              .map((entry) => normalizeRemoteSource(entry))
-              .filter((entry): entry is SeedSource => Boolean(entry));
-
-            metrics.fetched = remoteSources.length;
-
-            for (const remoteSource of remoteSources) {
-              try {
-                const result = await upsertSource(
-                  SourceModel,
-                  remoteSource,
-                  args.dryRun,
-                );
-                metrics[result] += 1;
-              } catch (error) {
-                metrics.failed += 1;
-                logError('Failed to upsert remote source from payload', {
+          for (const remoteSource of remoteSources) {
+            if (args.dryRun) {
+              metrics.simulated += 1;
+              continue;
+            }
+            try {
+              const result = await bulkUpsertSources(SourceModel, [
+                remoteSource,
+              ]);
+              metrics.inserted += result.upserted;
+              metrics.updated += result.modified;
+            } catch (error) {
+              metrics.failed += 1;
+              console.error(
+                JSON.stringify({
+                  level: 'error',
+                  message: 'Failed to upsert remote source from payload',
                   sourceId: source.id,
                   remoteSourceId: remoteSource.id,
                   error: (error as Error).message,
-                });
-              }
+                }),
+              );
             }
-
-            logInfo('seed:source:result', {
-              sourceId: source.id,
-              httpStatus,
-              durationMs: Date.now() - startedAt,
-              ...metrics,
-              dryRun: args.dryRun,
-            });
-
-            results.push({
-              sourceId: source.id,
-              sourceName: source.name,
-              httpStatus,
-              durationMs: Date.now() - startedAt,
-              metrics,
-            });
-            return;
           }
 
-          const articles = safeArrayFrom(payload).slice(0, SEED_MAX);
-          metrics.fetched = articles.length;
+          results.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            httpStatus,
+            durationMs: Date.now() - startedAt,
+            metrics,
+          });
+          return;
+        }
 
-          for (const article of articles) {
-            try {
-              const result = await processArticle(
-                ArticleModel,
-                source,
-                article,
-                args.dryRun,
-              );
-              metrics[result] += 1;
-            } catch (error) {
-              metrics.failed += 1;
-              logError('Failed to process article', {
+        const articles = safeArrayFrom(payload).slice(0, SEED_MAX);
+        metrics.fetched = articles.length;
+
+        for (const article of articles) {
+          try {
+            const result = await processArticle(
+              ArticleModel,
+              source,
+              article,
+              args.dryRun,
+            );
+            metrics[result] += 1;
+          } catch (error) {
+            metrics.failed += 1;
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                message: 'Failed to process article',
                 sourceId: source.id,
                 error: (error as Error).message,
-              });
-            }
+              }),
+            );
           }
+        }
 
-          logInfo('seed:source:result', {
+        if (!args.dryRun) {
+          await SourceModel.updateOne(
+            { id: source.id },
+            { $set: { lastFetchedAt: new Date() } },
+            { upsert: false },
+          ).exec();
+        }
+
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            message: 'seed:source:result',
             sourceId: source.id,
             httpStatus,
             durationMs: Date.now() - startedAt,
             ...metrics,
             dryRun: args.dryRun,
-          });
+          }),
+        );
 
-          results.push({
-            sourceId: source.id,
-            sourceName: source.name,
-            httpStatus,
-            durationMs: Date.now() - startedAt,
-            metrics,
-          });
-        } catch (error) {
-          metrics.failed += 1;
-          const axiosError = error as AxiosError;
-          logError('Failed to fetch source endpoint', {
+        results.push({
+          sourceId: source.id,
+          sourceName: source.name,
+          httpStatus,
+          durationMs: Date.now() - startedAt,
+          metrics,
+        });
+      } catch (error) {
+        metrics.failed += 1;
+        const axiosError = error as AxiosError;
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            message: 'Failed to fetch source endpoint',
             sourceId: source.id,
             error: axiosError.message,
             status: axiosError.response?.status,
-          });
-          results.push({
-            sourceId: source.id,
-            sourceName: source.name,
-            durationMs: Date.now() - startedAt,
-            metrics,
-            error: axiosError.message,
-            httpStatus: axiosError.response?.status,
-          });
-        }
-      },
-    );
-  } finally {
-    if (!args.dryRun) {
-      try {
-        if (
-          mongoose.connection.readyState !==
-          mongoose.ConnectionStates.disconnected
-        ) {
-          await mongoose.disconnect();
-        }
-      } catch (disconnectError) {
-        console.warn('mongoose disconnect error:', disconnectError);
+          }),
+        );
+        results.push({
+          sourceId: source.id,
+          sourceName: source.name,
+          durationMs: Date.now() - startedAt,
+          metrics,
+          error: axiosError.message,
+          httpStatus: axiosError.response?.status,
+        });
       }
-    }
-  }
+    },
+  );
 
   const totals = aggregateTotals(results);
-  logInfo('seed:summary', { ...totals, dryRun: args.dryRun });
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      message: 'seed:summary',
+      ...totals,
+      dryRun: args.dryRun,
+      bootstrap: Boolean(bootstrapInfo),
+    }),
+  );
 
   return { results, totals };
 };
@@ -613,13 +669,30 @@ const main = async () => {
     const summary = await runSeed(options);
     if (summary.totals.failed > 0) {
       exitCode = 1;
-      logError('Seed finished with errors', { failed: summary.totals.failed });
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          message: 'Seed finished with errors',
+          failed: summary.totals.failed,
+        }),
+      );
     } else {
-      logInfo('Seed completed successfully');
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          message: 'Seed completed successfully',
+        }),
+      );
     }
   } catch (error) {
     exitCode = 1;
-    logError('Seed failed', { error: (error as Error).message });
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        message: 'Seed failed',
+        error: (error as Error).message,
+      }),
+    );
   } finally {
     try {
       if (

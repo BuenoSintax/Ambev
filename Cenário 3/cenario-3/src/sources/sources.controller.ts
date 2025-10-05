@@ -3,12 +3,12 @@ import { ApiTags } from '@nestjs/swagger';
 import { SourcesService } from './sources.service';
 
 @ApiTags('sources')
-@Controller('api/v1/sources')
+@Controller('/api/v1/sources')
 export class SourcesController {
   constructor(private readonly svc: SourcesService) {}
 
   @Get()
-  list() {
-    return this.svc.findAll();
+  async list() {
+    return this.svc.listActive();
   }
 }
