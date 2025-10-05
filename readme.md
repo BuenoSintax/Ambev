@@ -39,19 +39,18 @@
 /
 ├─ Cenário 2/                         # Pipeline de ingestão & dados analíticos
 │  ├─ README.md                       # Arquitetura, orquestração e camadas de dados
-│  ├─ diagrams/                       # Diagramas de fluxo (ingestão, Kafka, Lake, etc.)
-│  └─ specs/                          # Decisões técnicas (bronze/silver/gold, índices, SLA)
+│  
 │
 ├─ Cenário 3/                         # API NestJS para consulta
 │  ├─ cenario-3/                      # Projeto Nest (código de exemplo)
-│  │  ├─ README.md                    # Como rodar, endpoints, contratos, segurança
-│  │  └─ src/...                      # Módulos (articles, sources, seed, schemas)
-│  └─ diagrams/                       # Fluxos de API, segurança, escalabilidade
+│    ├─ README.md                    # Como rodar, endpoints, contratos, segurança
+│    └─ src/...                      # Módulos (articles, sources, seed, schemas)
+│  
 │
 ├─ Cenário 4/                         # Boletim Diário com IA (design/orquestração)
 │  ├─ README.md                       # Arquitetura baseada em agentes (LangGraph-like)
-│  ├─ diagrams/                       # Grafo de estados, agentes e orquestração
-│  └─ prompts/                        # Esboços de contratos de saída por agente (JSON)
+│  
+│  
 │
 └─ README.md                          # (este arquivo) visão macro dos três cenários
 ```
